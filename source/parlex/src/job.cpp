@@ -4,12 +4,12 @@
 #include "perf_timer.hpp"
 #include "tarjan.hpp"
 
-#include "parlex/detail/context.hpp"
+#include "parlex/detail/configuration.hpp"
 #include "parlex/detail/grammar.hpp"
 #include "parlex/detail/match_class.hpp"
 #include "parlex/detail/parser.hpp"
 #include "parlex/detail/producer_table.hpp"
-#include "parlex/detail/state_machine.hpp"
+#include "parlex/detail/acceptor.hpp"
 #include "parlex/detail/subjob.hpp"
 #include "parlex/detail/terminal.hpp"
 #include "parlex/detail/token.hpp"
@@ -35,16 +35,16 @@ job::job(parser & owner, std::u32string const & document, grammar const & g, uin
 	auto const & root = g.get_recognizer(rootRecognizerIndex);
 	if (root.is_terminal()) {
 		auto const t = static_cast<terminal const *>(&root);  // NOLINT
-		storage.reset(new token(*this, matchClass, *t));
+		storage = new token(*this, matchClass, *t);
 	} else {
-		auto const machine = static_cast<state_machine const *>(&root);  // NOLINT
+		auto const machine = static_cast<acceptor const *>(&root);  // NOLINT
 		auto result = new subjob(*machine);
-		storage.reset(result);
+		storage = result;
 		//seed the parser with the root state
 		result->begin_work_queue_reference();
-		context const * context = &result->construct_start_state_context(0);
+		configuration const c = result->construct_start_state_configuration(0);
 		uint8_t startState = machine->get_start_state();
-		owner.work.emplace_back(matchClass, context, startState);
+		owner.work.emplace_back(matchClass, c);
 		result->finish_creation(*this, matchClass);
 		++owner.active_count;
 		// start when parser::mutex is unlocked
@@ -52,8 +52,8 @@ job::job(parser & owner, std::u32string const & document, grammar const & g, uin
 	}
 }
 
-void job::connect(match_class const & requestedMatchClass, subjob & subscriber, match_class const & subscriberId, context const & c, uint8_t const nextState, leaf const * l) {
-	get_producer(requestedMatchClass).add_subscription(*this, requestedMatchClass, subscriber, subscriberId, c, nextState, l);
+void job::connect(match_class const & requestedMatchClass, subjob & subscriber, match_class const & subscriberId, uint8_t const nextState, leaf const * l, transition_record const * history) {
+	get_producer(requestedMatchClass).add_subscription(nextState, l, history, subscriber, subscriberId, requestedMatchClass, *this);
 }
 
 producer & job::get_producer(match_class const & matchClass) {
@@ -63,11 +63,11 @@ producer & job::get_producer(match_class const & matchClass) {
 		auto const & r = g.get_recognizer(matchClass.recognizer_index);
 		if (r.is_terminal()) {
 			auto const & t = *static_cast<terminal const *>(&r);  // NOLINT
-			storage.reset(new token(*this, matchClass, t));
+			storage = new token(*this, matchClass, t);
 		} else {
-			auto const machine = static_cast<state_machine const *>(&r);  // NOLINT
+			auto const machine = static_cast<acceptor const *>(&r);  // NOLINT
 			auto newSubjobPtr = new subjob(*machine);
-			storage.reset(newSubjobPtr);
+			storage = newSubjobPtr;
 			lock.unlock();
 			newSubjobPtr->start(*this, matchClass);
 		}
@@ -157,14 +157,17 @@ abstract_syntax_semilattice job::construct_result(match const & m) {
 	for (auto const & pair : producers) {
 		auto const & matchClass = pair.first;
 		auto const & p = *pair.second;
-		for (auto const & pair2 : p.match_length_to_permutations) {
+		for (auto const & pair2 : p.match_length_to_derivations) {
 			auto const matchLength = pair2.first;
 			match const n(matchClass, matchLength);
-			auto const & permutations = pair2.second;
-			result.permutations_of_matches[n] = permutations;
+			auto const & derivations = pair2.second;
+			result.derivations_of_matches[n] = derivations;
 		}
 	}
 
+	for (auto entry : producers) {
+		delete entry.second;
+	}
 	producers.clear();
 
 	if (result.is_rooted()) {

@@ -4,10 +4,10 @@
 
 #include "parlex/post_processor.hpp"
 
-#include "parlex/detail/context.hpp"
+#include "parlex/detail/configuration.hpp"
 #include "parlex/detail/grammar.hpp"
 #include "parlex/detail/job.hpp"
-#include "parlex/detail/permutation.hpp"
+#include "parlex/detail/derivation.hpp"
 #include "parlex/detail/producer.hpp"
 #include "parlex/detail/subjob.hpp"
 
@@ -20,11 +20,11 @@ namespace parlex {
 namespace detail {
 
 void parser::process(work_item const & item) const {
-	update_progress(*item.dfa_context);
+	update_progress(item.dfa_configuration);
 	auto & p = current_job->get_producer(item.subjob_id);
 	auto & sj = *static_cast<subjob *>(&p);
 	//INF("thread ", threadCount, " executing DFA state");
-	sj.machine.process(*current_job, sj, item.subjob_id, *item.dfa_context, item.dfa_state);
+	sj.machine.process(*current_job, sj, item.subjob_id, item.dfa_configuration);
 	sj.end_work_queue_reference(*current_job, item.subjob_id);
 }
 
@@ -71,8 +71,8 @@ void parser::complete_progress_handler(job & j) {
 	j.update_progress(uint32_t(j.document.length()));
 }
 
-void parser::update_progress(context const & context) const {
-	current_job->update_progress(context.current_document_position);
+void parser::update_progress(configuration const & c) const {
+	current_job->update_progress(c.current_document_position);
 }
 
 abstract_syntax_semilattice parser::single_thread_parse(grammar const & g, uint16_t const overrideRootRecognizerIndex, std::vector<post_processor> const & posts, std::u32string const & document, progress_handler_t const & progressHandler) {
@@ -141,35 +141,35 @@ abstract_syntax_semilattice parser::parse(grammar const & g, recognizer const & 
 }
 
 abstract_syntax_semilattice parser::parse(grammar const & g, std::vector<post_processor> const & posts, std::u32string const & document, progress_handler_t const & progressHandler) {
-	return parse(g, g.get_root_state_machine(), posts, document, progressHandler);
+	return parse(g, g.get_root_acceptor(), posts, document, progressHandler);
 }
 
 abstract_syntax_semilattice parser::parse(grammar const & g, std::u32string const & document, progress_handler_t const & progressHandler) {
-	return parse(g, g.get_root_state_machine(), document, progressHandler);
+	return parse(g, g.get_root_acceptor(), document, progressHandler);
 }
 
-void parser::schedule(match_class const & subjobId, context const & c, int nextDfaState) {
+void parser::schedule(match_class const & subjobId, configuration const & c) {
 	//DBG("scheduling m: ", c.owner().machine.name, " b:", c.owner().documentPosition, " s:", nextDfaState, " p:", c.current_document_position());
 	auto & p = current_job->get_producer(subjobId);
 	auto & sj = *static_cast<subjob *>(&p);  // NOLINT
 	sj.begin_work_queue_reference();
 	++active_count;
 	std::unique_lock<std::mutex> lock(mutex);
-	work.emplace_back(subjobId, &c, nextDfaState);
+	work.emplace_back(subjobId, c);
 	work_cv.notify_one();
 }
 
 struct node_props_t {
 	match const m;
-	std::set<permutation> & permutations;
-	std::map<match, std::set<permutation>> parent_permutations_by_match;
+	std::set<derivation> & derivations;
+	std::map<match, std::set<derivation>> parent_derivations_by_match;
 	size_t height;
 	std::set<match> all_descendents;
 	std::set<match> all_ancestors;
 	std::set<match> all_descendents_and_ancestors;
 	collections::coherent_set<match> all_unrelated_intersections;
 
-	node_props_t(abstract_syntax_semilattice & asg, match const & m) : m(m), permutations(asg.permutations_of_matches[m]), height(0) {
+	node_props_t(abstract_syntax_semilattice & asg, match const & m) : m(m), derivations(asg.derivations_of_matches[m]), height(0) {
 	}
 };
 
@@ -186,16 +186,16 @@ static void prune(abstract_syntax_semilattice & asg, std::map<match, node_props_
 		auto const thisMatch = toPrune.front();
 		auto & thisNode = nodes.find(thisMatch)->second;
 		toPrune.pop();
-		for (auto const & parentMatchAndPermutations : thisNode.parent_permutations_by_match) {
-			auto const & parentMatch = parentMatchAndPermutations.first;
+		for (auto const & parentMatchAndDerivations : thisNode.parent_derivations_by_match) {
+			auto const & parentMatch = parentMatchAndDerivations.first;
 			auto const i = nodes.find(parentMatch);
 			throw_assert(i != nodes.end());
 			auto & parentProps = i->second;
-			auto const & parentPermutations = parentMatchAndPermutations.second;
-			for (auto const & perm : parentPermutations) {
-				parentProps.permutations.erase(perm);
+			auto const & parentDerivations = parentMatchAndDerivations.second;
+			for (auto const & perm : parentDerivations) {
+				parentProps.derivations.erase(perm);
 			}
-			if (parentProps.permutations.empty()) {
+			if (parentProps.derivations.empty()) {
 				add(parentMatch);
 			}
 		}
@@ -205,8 +205,8 @@ static void prune(abstract_syntax_semilattice & asg, std::map<match, node_props_
 			auto & descendent = i->second;
 			descendent.all_ancestors.erase(thisMatch);
 			descendent.all_descendents_and_ancestors.erase(thisMatch);
-			descendent.parent_permutations_by_match.erase(thisMatch);
-			if (descendent.parent_permutations_by_match.empty()) {
+			descendent.parent_derivations_by_match.erase(thisMatch);
+			if (descendent.parent_derivations_by_match.empty()) {
 				add(descendentMatch);				
 			}
 		}
@@ -227,23 +227,23 @@ static void prune(abstract_syntax_semilattice & asg, std::map<match, node_props_
 
 	for (auto const & i : completed) {
 		nodes.erase(i);
-		asg.permutations_of_matches.erase(i);
+		asg.derivations_of_matches.erase(i);
 	}
 }
 
 static void construct_nodes(abstract_syntax_semilattice & asg, std::map<match, node_props_t> & nodes, std::vector<std::set<node_props_t *>> & flattened) {
 	//perf_timer perf(__FUNCTION__);
-	for (auto const & matchAndPermutations : asg.permutations_of_matches) {
-		auto const & m = matchAndPermutations.first;
+	for (auto const & matchAndDerivations : asg.derivations_of_matches) {
+		auto const & m = matchAndDerivations.first;
 		auto & nodeProps = nodes.emplace(std::piecewise_construct, std::forward_as_tuple(m), std::forward_as_tuple(asg, m)).first->second;
 
-		for (auto const & perm : nodeProps.permutations) {
+		for (auto const & perm : nodeProps.derivations) {
 			for (match const & child : perm) {
 				auto & childProps = nodes.emplace(std::piecewise_construct, std::forward_as_tuple(child), std::forward_as_tuple(asg, child)).first->second;
-				if (childProps.permutations.empty()) {
+				if (childProps.derivations.empty()) {
 					childProps.height = 0;
 				}
-				childProps.parent_permutations_by_match[nodeProps.m].insert(perm);
+				childProps.parent_derivations_by_match[nodeProps.m].insert(perm);
 			}
 		}
 		auto const afterIndex = nodeProps.m.document_position + nodeProps.m.consumed_character_count;
@@ -267,8 +267,8 @@ static void resolve_nodes(std::map<match, node_props_t> & nodes) {
 	std::function<std::vector<size_t> (size_t)> const transitionFunc = [&](size_t const & vertexIndex) {
 		auto & props = *vertices[vertexIndex];
 		std::vector<size_t> results;
-		for (auto const & permutation : props.permutations) {
-			for (auto const & m : permutation) {
+		for (auto const & derivation : props.derivations) {
+			for (auto const & m : derivation) {
 				auto i = nodes.find(m);
 				throw_assert(i != nodes.end());
 				results.push_back(lookup[&(i->second)]);
@@ -282,8 +282,8 @@ static void resolve_nodes(std::map<match, node_props_t> & nodes) {
 	for (auto const & subgraph : orderedNodes) {
 		for (auto const & vertexIndex : subgraph) {
 			auto & node = *vertices[vertexIndex];
-			for (auto const & permutation : node.permutations) {
-				for (auto const & m : permutation) {
+			for (auto const & derivation : node.derivations) {
+				for (auto const & m : derivation) {
 					auto i = nodes.find(m);
 					throw_assert(i != nodes.end());
 					auto & otherNode = i->second;
@@ -299,7 +299,7 @@ static void resolve_nodes(std::map<match, node_props_t> & nodes) {
 	for (auto const & subgraph : orderedNodes) {
 		for (auto const & vertexIndex : subgraph) {
 			auto & node = *vertices[vertexIndex];
-			for (auto const & entry : node.parent_permutations_by_match) {
+			for (auto const & entry : node.parent_derivations_by_match) {
 				auto const parentMatch = entry.first;
 				auto const i = nodes.find(parentMatch);
 				throw_assert(i != nodes.end());
@@ -332,7 +332,7 @@ struct intersection_lookup {
 				}
 			}
 		}
-		for (intmax_t depth = lookupDepth - 2; depth >= 0; --depth) {
+		for (auto depth = static_cast<int>(lookupDepth) - 2; depth >= 0; --depth) {
 			auto const antiDepth = (lookupDepth - 1) - depth;
 			auto const rowWidth = docLen >> antiDepth;
 			auto & row = lookup[depth];
@@ -351,11 +351,11 @@ struct intersection_lookup {
 		auto const lookupDepth = lookup.size();
 		// common higher-order bits identify the row and column fully containing the span
 		auto const containmentAntiRow = sizeof(int32_t) * 8 - clz(first ^ last);
-		int const containmentBreadth = 1 << containmentAntiRow;
-		int const containmentColumn = first >> containmentAntiRow;
-		int const containmentFirst = containmentColumn << containmentAntiRow;
+		auto const containmentBreadth = 1 << containmentAntiRow;
+		auto const containmentColumn = first >> containmentAntiRow;
+		auto const containmentFirst = containmentColumn << containmentAntiRow;
 		auto const containmentLast = containmentFirst + containmentBreadth - 1;
-		intmax_t const containmentRow = intmax_t(lookupDepth - 1) - containmentAntiRow;
+		int const containmentRow = ptrdiff_t(lookupDepth - 1) - containmentAntiRow;
 		if (containmentRow >= 0 && int(lookup[containmentRow].size()) > containmentColumn && first == containmentFirst && last == containmentLast) {
 			auto resolved = lookup[containmentRow][containmentColumn];
 			results.insert_many(resolved.begin(), resolved.end());
@@ -413,7 +413,7 @@ static bool associativity_test(grammar const & g, node_props_t & a, node_props_t
 	if (a.m.recognizer_index != b.m.recognizer_index) {
 		return false;
 	}
-	auto const assoc = dynamic_cast<state_machine const *>(&g.get_recognizer(a.m.recognizer_index))->get_assoc();
+	auto const assoc = dynamic_cast<acceptor const *>(&g.get_recognizer(a.m.recognizer_index))->get_assoc();
 	switch (assoc) {
 		case associativity::LEFT:
 		case associativity::ANY:
@@ -475,7 +475,7 @@ void parser::apply_precedence_and_associativity(grammar const & g, abstract_synt
 
 	for (uint16_t i = 0; i < g.get_recognizer_count(); ++i) {
 		auto const * recognizerPtr = &g.get_recognizer(i);
-		auto const * asStateMachineBasePtr = dynamic_cast<state_machine const *>(recognizerPtr);
+		auto const * asStateMachineBasePtr = dynamic_cast<acceptor const *>(recognizerPtr);
 		if (asStateMachineBasePtr != nullptr) {
 			auto const & stateMachineBase = *asStateMachineBasePtr;
 			if (stateMachineBase.get_assoc() != associativity::NONE) {

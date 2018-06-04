@@ -1,18 +1,18 @@
+#include <utility>
 #include "../include/parlex/detail/abstract_syntax_tree.hpp"
 
 #include "graphviz_dot.hpp"
 
-#include "parlex/builder.hpp"
 #include "parlex/detail/grammar.hpp"
 
-parlex::detail::ast_node::ast_node(match const & m, std::vector<ast_node> const & children, leaf const * l) : match(m), children(children), l(l) {}
+parlex::detail::ast_node::ast_node(transition const & t, std::vector<ast_node> children) : transition(t), children(std::move(children)) {}
 
 std::string parlex::detail::ast_node::to_dot(grammar const & g) const
 {
 	auto const nameFunc = [&](ast_node const * n)
 	{
 		std::stringstream result;
-		result << g.get_recognizer(uint16_t(n->l->recognizer_index)).name << " (" << n << ")";
+		result << g.get_recognizer(n->recognizer_index).name << " (" + std::to_string(n->document_position + 1) + " - " + std::to_string(n->consumed_character_count + n->document_position) + ")";
 		return result.str();
 	};
 	auto const edgeFunc = [&](ast_node const * n) {

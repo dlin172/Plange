@@ -35,12 +35,7 @@
             function isOP($name) {
                 $haystack = $name;
                 $needle = "_OP";
-                $length = strlen($needle);
-                if ($length == 0) {
-                    return true;
-                }
-            
-                 return (substr($haystack, -$length) === $needle) && $name !== "ASM_OP";
+                 return (substr($haystack, -strlen($needle)) === $needle) && $name !== "ASM_OP";
             }
             
             // Given an extended Wirth syntax string, return referenced entries.
@@ -82,7 +77,7 @@
         
             function process($indent, $name) {
                 echo $indent . "<li>";
-                echo $indent . $name . "\n";
+                echo $indent . "<a href=\"/documentation/syntax.php?name=" . $name . "\">" . $name . "</a>\n";
                 global $syntax_spec;
                 $syntax = trim($syntax_spec[$name]['syntax']);
                 foreach (extract_string_literals($syntax) as $literal) {
@@ -101,9 +96,46 @@
                 echo $indent . "</li>\n";
             }
             
+            function process_OP_ASSIGNMENT() {
+                echo "  <li><a href=\"/documentation/syntax.php?name=OP_ASSIGNMENT\">OP_ASSIGNMENT</a>\n";
+                echo "    <ul>\n";
+                global $syntax_spec;
+                $syntax = trim($syntax_spec['OP_ASSIGNMENT']['syntax']);
+                $children = extract_children($syntax);
+
+                foreach ($children as $child) {
+                    echo "      <li><a href=\"/documentation/syntax.php?name=" . $child . "\">" . $child . "</a>";
+                    $childSyntax = trim($syntax_spec[$child]['syntax']);
+                    $literals = extract_string_literals($childSyntax);                    
+                    if (array_slice($literals, -2, 2) == ["<-", "←"]) {
+                        array_splice($literals, -2);
+                        foreach ($literals as $literal) {
+                            echo " <code>";
+                            echo $literal . "<-";
+                            echo "</code> ";
+
+                            echo " <code>";
+                            echo $literal . "←";
+                            echo "</code> ";
+                        }
+                    } else {
+                        foreach ($literals as $literal) {
+                            echo " <code>";
+                            echo $literal;
+                            echo "</code> ";
+                        }
+                    }
+                    echo "</li>\n";
+                }
+                echo "    </ul>\n";
+                echo "  </li>\n";
+            }
+
+
             echo "<ul>\n";
             process("  ", "BINARY_OP");
             process("  ", "UNARY_OP");
+            process_OP_ASSIGNMENT();
             echo "</ul>\n";
         ?>
 

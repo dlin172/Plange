@@ -7,7 +7,6 @@
 
 #include "../builder.hpp"
 #include "abstract_syntax_semilattice.hpp"
-#include "match.hpp"
 
 #include "erased.hpp"
 #include "mpl_fold_vx.hpp"
@@ -15,8 +14,8 @@
 namespace parlex::detail::document {
 
 	struct walk {
-		ast_node::const_iterator pos;
-		ast_node::const_iterator const end;
+		std::vector<ast_node>::const_iterator pos;
+		std::vector<ast_node>::const_iterator const end;
 	};
 
 	template<typename T>

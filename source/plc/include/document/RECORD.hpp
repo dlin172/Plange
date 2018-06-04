@@ -17,26 +17,28 @@
 
 namespace plc {
 
-struct ICR;
+struct IC;
 struct TYPE;
 
 struct RECORD {
 	parlex::detail::document::text<literal_record_t> dontCare0;
 	
-	std::vector<erased<ICR>> field_1;
+	erased<IC> field_1;
 	
-	erased<TYPE> field_2;
+	std::vector<erased<IC>> field_2;
+	
+	erased<TYPE> field_3;
 	
 
 
 	explicit RECORD(
-		parlex::detail::document::text<literal_record_t> && dontCare0, std::vector<erased<ICR>> && field_1, erased<TYPE> && field_2) : dontCare0(std::move(dontCare0)), field_1(std::move(field_1)), field_2(std::move(field_2)) {}
+		parlex::detail::document::text<literal_record_t> && dontCare0, erased<IC> && field_1, std::vector<erased<IC>> && field_2, erased<TYPE> && field_3) : dontCare0(std::move(dontCare0)), field_1(std::move(field_1)), field_2(std::move(field_2)), field_3(std::move(field_3)) {}
 
 	RECORD(RECORD const & other) = default;
 	RECORD(RECORD && move) = default;
 
 	static RECORD build(parlex::detail::ast_node const & n);
-	static parlex::detail::state_machine const & state_machine();
+	static parlex::detail::acceptor const & acceptor();
 
 };
 

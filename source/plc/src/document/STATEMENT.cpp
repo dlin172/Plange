@@ -18,6 +18,7 @@
 #include "IMPORT.hpp"
 #include "LOCK.hpp"
 #include "LOOP.hpp"
+#include "OP_ASSIGNMENT.hpp"
 #include "READ_LOCK.hpp"
 #include "RETURN.hpp"
 #include "THROW.hpp"
@@ -27,7 +28,7 @@
 #include "WRITE_LOCK.hpp"
 
 plc::STATEMENT plc::STATEMENT::build(parlex::detail::ast_node const & n) {
-	static auto const * b = state_machine().behavior;
+	static auto const * b = acceptor().behavior;
 	parlex::detail::document::walk w{ n.children.cbegin(), n.children.cend() };
 	auto const & children = b->children;
 	auto v0 = parlex::detail::document::element<std::variant<
@@ -43,6 +44,7 @@ plc::STATEMENT plc::STATEMENT::build(parlex::detail::ast_node const & n) {
 		erased<IMPORT>,
 		erased<LOCK>,
 		erased<LOOP>,
+		erased<OP_ASSIGNMENT>,
 		erased<READ_LOCK>,
 		erased<RETURN>,
 		erased<THROW>,
@@ -57,7 +59,7 @@ plc::STATEMENT plc::STATEMENT::build(parlex::detail::ast_node const & n) {
 }
 
 
-parlex::detail::state_machine const & plc::STATEMENT::state_machine() {
-	static auto const & result = *static_cast<parlex::detail::state_machine const *>(&plange_grammar::get().get_recognizer(plange_grammar::get().STATEMENT));
+parlex::detail::acceptor const & plc::STATEMENT::acceptor() {
+	static auto const & result = *static_cast<parlex::detail::acceptor const *>(&plange_grammar::get().get_recognizer(plange_grammar::get().STATEMENT));
 	return result;
 }

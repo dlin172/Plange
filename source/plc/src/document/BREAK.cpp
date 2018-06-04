@@ -7,7 +7,6 @@
 #include "parlex/detail/document.hpp"
 #include "EXPRESSION.hpp"
 #include "IC.hpp"
-#include "ICR.hpp"
 #include "IDENTIFIER.hpp"
 
 plc::BREAK::field_1_t_1_t_1_t plc::BREAK::field_1_t_1_t_1_t::build(parlex::detail::node const * b, parlex::detail::document::walk & w) {
@@ -23,13 +22,14 @@ plc::BREAK::field_1_t_1_t_1_t plc::BREAK::field_1_t_1_t_1_t::build(parlex::detai
 
 plc::BREAK::field_1_t_1_t_2_t plc::BREAK::field_1_t_1_t_2_t::build(parlex::detail::node const * b, parlex::detail::document::walk & w) {
 	auto const & children = b->children;
-	auto v0 = parlex::detail::document::element<std::vector<erased<ICR>>>::build(&*children[0], w);
-	auto v1 = parlex::detail::document::element<erased<IDENTIFIER>>::build(&*children[1], w);
-	return field_1_t_1_t_2_t(std::move(v0), std::move(v1));
+	auto v0 = parlex::detail::document::element<erased<IC>>::build(&*children[0], w);
+	auto v1 = parlex::detail::document::element<std::vector<erased<IC>>>::build(&*children[1], w);
+	auto v2 = parlex::detail::document::element<erased<IDENTIFIER>>::build(&*children[2], w);
+	return field_1_t_1_t_2_t(std::move(v0), std::move(v1), std::move(v2));
 }
 
 plc::BREAK plc::BREAK::build(parlex::detail::ast_node const & n) {
-	static auto const * b = state_machine().behavior;
+	static auto const * b = acceptor().behavior;
 	parlex::detail::document::walk w{ n.children.cbegin(), n.children.cend() };
 	auto const & children = b->children;
 	auto v0 = parlex::detail::document::element<parlex::detail::document::text<literal_break_t>>::build(&*children[0], w);
@@ -41,7 +41,7 @@ plc::BREAK plc::BREAK::build(parlex::detail::ast_node const & n) {
 }
 
 
-parlex::detail::state_machine const & plc::BREAK::state_machine() {
-	static auto const & result = *static_cast<parlex::detail::state_machine const *>(&plange_grammar::get().get_recognizer(plange_grammar::get().BREAK));
+parlex::detail::acceptor const & plc::BREAK::acceptor() {
+	static auto const & result = *static_cast<parlex::detail::acceptor const *>(&plange_grammar::get().get_recognizer(plange_grammar::get().BREAK));
 	return result;
 }
